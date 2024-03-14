@@ -1,0 +1,92 @@
+name: build_push
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+#    - name: Install 7Zip PowerShell Module
+#      shell: powershell
+#      run: Install-Module 7Zip4PowerShell -Force -Verbose
+
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - uses: suisei-cn/actions-download-file@v1
+      id: downloadboost
+      name: Download Boost
+      with:
+        url: "https://boostorg.jfrog.io/artifactory/main/release/1.73.0/source/boost_1_73_0.7z"
+        target: Thirdparty/
+
+    - uses: suisei-cn/actions-download-file@v1
+      id: downloadicu
+      name: Download Icu
+      with:
+        url: "https://github.com/unicode-org/icu/releases/download/release-60-3/icu4c-60_3-src.zip"
+        target: Thirdparty/
+
+#    - name: Extract Boost files
+#      run: Expand-Archive -LiteralPath './Thirdparty/boost_1_73_0.7z' -DestinationPath ./Thirdparty/Boost
+    
+#    - name: Extract Icu files
+#      run: Expand-Archive -LiteralPath './Thirdparty/icu4c-60_3-src.zip' -DestinationPath ./Thirdparty/Icu
+
+    - uses: msys2/setup-msys2@v2
+      name: Setup msys2
+      with:
+        update: true
+        install: >-
+          base-devel
+          make
+          diffutils
+          yasm
+          nasm
+          pkg-config
+
+    - shell: msys2 {0}
+      name: Config msys2
+      run: set MSYSTEM=MINGW64
+
+    - name: Run msys2_shell.cmd
+      shell: cmd
+      run: C:\Windows\system32\cmd.exe /D /S /C C:\msys64\msys2_shell.cmd
+
+    - run: set MSYS2_PATH_TYPE=inherit
+      name: Set MSYS2_PATH_TYPE
+      shell: msys2 {0}
+
+    - shell: msys2 {0}
+      name: Rename link.exe
+      run: mv /usr/bin/link.exe /usr/bin/link.exe.bak
+
+    - name: Clone FFmpeg repository
+      uses: actions/checkout@v2
+      with:
+        repository: FFmpeg/FFmpeg
+        path: ffmpeg
+        ref: master
+
+    - name: Make FFmpeg
+      shell: msys2 {0}
+      run: |
+          cd ./ffmpeg
+          ./configure --enable-cross-compile --toolchain=msvc --enable-gpl --enable-version3 --disable-encoders --disable-programs --disable-filters --disable-network --disable-doc --disable-avdevice --disable-postproc --disable-avfilter --enable-dxva2 --enable-d3d11va
+          make
+          make install
+
+    - uses: GuillaumeFalourd/setup-windows10-sdk-action@v1.6
+      name: Setup Windows 10 SDK
+
+    - name: Add msbuild to PATH
+      uses: microsoft/setup-msbuild@v1.1
+
+    - name: Build app
+      shell: powershell
+      run: msbuild Kainote/Kainote.vcxproj -t:rebuild -verbosity:diag -property:Configuration=Release
